@@ -1,4 +1,5 @@
 import pandas as pd
+from tabulate import tabulate
 import numpy as np
 
 
@@ -93,7 +94,8 @@ if __name__ == '__main__':
     channels_df = create_channels_df('../BData/channels.json')
     pair_schedule_df = createJamScheduleForPair(in_channel, out_channel, forward_df)
     with_weak_jam = updateWeakJam(pair_schedule_df, channels_df, in_channel, out_channel, 10)
-    print(with_weak_jam['weak jammed'].head(10))
+#    print(with_weak_jam['weak jammed'].head(10))
+    print(tabulate(with_weak_jam.head(10), headers='keys'))
 
     #print(df.head())
 
