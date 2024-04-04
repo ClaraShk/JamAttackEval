@@ -93,10 +93,11 @@ def updateWeakJam(eventDf, channelsDf, inChannel, outChannel, numOfSlots): #Do w
 if __name__ == '__main__':
     in_channel = '273778395381760'
     out_channel = '267181325615104'
+    slots_in_channel = 10
     forward_df = create_forwards_df('../BData/forwards.json')
     channels_df = create_channels_df('../BData/channels.json')
     pair_schedule_df = createJamScheduleForPair(in_channel, out_channel, forward_df)
-    with_weak_jam = updateWeakJam(pair_schedule_df, channels_df, in_channel, out_channel, 10)
+    with_weak_jam = updateWeakJam(pair_schedule_df, channels_df, in_channel, out_channel, slots_in_channel)
 #    print(with_weak_jam['weak jammed'].head(10))
     print(tabulate(with_weak_jam.head(10), headers='keys'))
 
