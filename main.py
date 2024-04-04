@@ -3,6 +3,7 @@ from tabulate import tabulate
 import numpy as np
 
 
+#read and parse forwards json
 def create_forwards_df(path):
     forwardsDf = pd.read_json(path)
     forwardsDf = forwardsDf['forwards'].apply(pd.Series)
@@ -17,13 +18,14 @@ def create_forwards_df(path):
 
     return forwardsDf
 
+#read and parse channels json
 def create_channels_df(path):
     channelsDf = pd.read_json(path)
     channelsDf = channelsDf['channels'].apply(pd.Series)
     channelsDf['capacity'] = channelsDf['capacity'].astype(int)
     return channelsDf
 
-
+#For a pair of channels, create a df in which each row correponds to a time of interest (htlc added/resolved)
 def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
     # Filter rows where shortChannelId_incoming matches inputChannel
     #pair_df = forwardsDf[(forwardsDf['shortChannelId_incoming'] == inChannel) & (forwardsDf['shortChannelId_outgoing'] == OutChannel)].copy()
@@ -55,7 +57,7 @@ def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
     ordered_df = ordered_df.reset_index()
     return ordered_df
 
-
+#In a df of events, update the column 'weak jam'
 def updateWeakJam(eventDf, channelsDf, inChannel, outChannel, numOfSlots): #Do we care about balance out? Probably...
     magic_jamming_number = 0.95
     balance_in = channelsDf[channelsDf['chan_id'] == inChannel]['capacity'][0] * (1 / 2) * (
@@ -87,6 +89,7 @@ def updateWeakJam(eventDf, channelsDf, inChannel, outChannel, numOfSlots): #Do w
             eventDf.at[index, 'weak jammed'] = False
     return eventDf
 
+
 if __name__ == '__main__':
     in_channel = '273778395381760'
     out_channel = '267181325615104'
@@ -97,6 +100,4 @@ if __name__ == '__main__':
 #    print(with_weak_jam['weak jammed'].head(10))
     print(tabulate(with_weak_jam.head(10), headers='keys'))
 
-    #print(df.head())
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
