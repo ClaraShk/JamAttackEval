@@ -36,6 +36,8 @@ def create_reputation_df(path):
     return reputationDf
 
 
+
+
 def create_rep_by_channel_df(reputation_df):
     # Find unique values in 'shortChannelId_incoming'
     unique_channels = reputation_df['shortChannelId_incoming'].unique()
@@ -124,8 +126,8 @@ def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
 
     # Add empty columns for 'weak jammed' and 'strong jammed'
     filtered_new_df['weak jammed'] = ''
-    filtered_new_df['approx outgoing rep'] = ''
-    filtered_new_df['strong jammed'] = ''
+    #filtered_new_df['approx outgoing rep'] = ''
+    #filtered_new_df['strong jammed'] = ''
 
     # Order by 'timeOfEvent'
     ordered_df = filtered_new_df.sort_values(by='timeOfEvent')
@@ -194,10 +196,27 @@ def updateStrongJamOp1(pair_schedule_df, channelsDf, inChannel, outChannel, numO
     return pair_schedule_df
 
 
+def updateStrongJamOp2(rep_by_channel_df, events_df):
+    df1 = rep_by_channel_df[['event time', 'high rep neighbor']].copy()
+    df2 = events_df[['timeOfEvent', 'weak jammed', 'strong jammed op1']].copy()
+    combined_df = pd.concat([df1, df2], ignore_index=True)
+    combined_df['time'] = np.where(combined_df['event time'].isna(), combined_df['timeOfEvent'],
+                                   combined_df['event time'])
+    combined_df.sort_values(by='time')
+    clean_df = combined_df[['time', 'high rep neighbor', 'weak jammed', 'strong jammed op1']].sort_values(
+        by='time').copy()
+    clean_df.ffill(inplace=True)
+    clean_df['strong jam op2'] = np.where(((clean_df['high rep neighbor'] == 'no') & (clean_df['weak jammed'] == True)),
+                                          True, False)
+    clean_df['strong jam'] = np.where(((clean_df['strong jammed op1']) & (clean_df['strong jam op2'])), True, False)
+    return clean_df.reset_index()
+
 if __name__ == '__main__':
     in_channel = '273778395381760'
     out_channel = '267181325615104'
-    slots_in_channel = 10
+    slots_in_channel = 1
+
+
     forward_df = create_forwards_df('../BData/forwards.json')
     channels_df = create_channels_df('../BData/channels.json')
     reputation_df = create_reputation_df('../BData/reputation.json')
@@ -211,7 +230,16 @@ if __name__ == '__main__':
     print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
 
     week_jam_by_neighbor_df = fill_reputation_by_channel(channels_df, reputation_df)
-    print(tabulate(week_jam_by_neighbor_df.head(30), headers='keys'))
+    #print(tabulate(week_jam_by_neighbor_df.head(30), headers='keys'))
+
+    with_op2 = updateStrongJamOp2(week_jam_by_neighbor_df, with_strong_jam_op1)
+    #print(tabulate(with_op2.head(30), headers='keys'))
+    #print(tabulate(with_op2[with_op2["weak jammed"]==True].head(30), headers='keys'))
+    print(f"num of events {len(with_op2)}")
+    print(f"weak jam {len(with_op2[with_op2['weak jammed']==True])}")
+    print(f"strong jam {len(with_op2[with_op2['strong jam']==True])}")
+
+
 
 
 
