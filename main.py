@@ -132,7 +132,7 @@ def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
 
     # Order by 'timeOfEvent'
     ordered_df = filtered_new_df.sort_values(by='timeOfEvent')
-    ordered_df = ordered_df.reset_index()
+    ordered_df = ordered_df.reset_index(drop = True)
 #    print(f'in ordered_df for {inChannel} and {OutChannel} we have {len(ordered_df)} lines')
     #print(tabulate(ordered_df.head(30), headers='keys'))
     return ordered_df
@@ -140,67 +140,70 @@ def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
 
 #In a df of events, update the column 'weak jam'
 def updateWeakJam(eventDf, numOfSlots): #re-write so it follows the balance of each channel to get correct result
-    print('Events:')
-    print(tabulate(eventDf.head(30), headers='keys'))
 
     magic_jamming_number = 0.95
 
-    for inChannel in channels_df['chan_id'].unique():
-        balance_in = channels_df[channels_df['chan_id'] == inChannel]['capacity'].iloc[0] * (1 / 2) * (
+    #eventDf['balance in'] = ''
+
+    for channel in channels_df['chan_id'].unique():
+        balance_in = channels_df[channels_df['chan_id'] == channel]['capacity'].iloc[0] * (1 / 2) * (
                     1 / 2)  # balance in general
-        balance_out = channels_df[channels_df['chan_id'] == outChannel]['capacity'].iloc[0] * (1 / 2) * (
+        balance_out = channels_df[channels_df['chan_id'] == channel]['capacity'].iloc[0] * (1 / 2) * (
                     1 / 2)  # balance in general
         locked_liq_in = 0
         locked_liq_out = 0
-        available_slots_in = numOfSlots
-        available_slots_out = numOfSlots
-        eventDf['balance in'] = ''
-        for index, row in eventDf[eventDf['shortChannelId_incoming'] == inChannel].iterrows():
+        available_slots_in = numOfSlots/2 #slots in general
+        available_slots_out = numOfSlots/2 #slots in general
+
+        for index, row in eventDf[eventDf['shortChannelId_outgoing'] == channel].iterrows():
             if (row['eventType'] == 'add'): #and (row['outgoingEndorsed'] == False):
-                balance_in = balance_in - int(row['incomingAmount'])
-                locked_liq_in = locked_liq_in + int(row['incomingAmount'])
-                available_slots_in = available_slots_in - 1
+                #balance_in = balance_in - int(row['incomingAmount'])
+                #locked_liq_in = locked_liq_in + int(row['outgoingAmount'])
+                available_slots_out = available_slots_out - 1
             elif row['eventType'] == 'resolve':
-                locked_liq_in = locked_liq_in - int(row['incomingAmount'])
-                available_slots_in = available_slots_in + 1
+               # locked_liq_in = locked_liq_in - int(row['incomingAmount'])
+                available_slots_out = available_slots_out + 1
 
-            eventDf.at[index, 'balance in'] = balance_in
-            eventDf.at[index, 'locked liq in'] = locked_liq_in
+            #eventDf.at[index, 'balance in'] = balance_in
+            #eventDf.at[index, 'locked liq in'] = locked_liq_in
+            eventDf.at[index, 'taken slots out'] = available_slots_out
 
 
 
-            if (locked_liq_in >= balance_in * magic_jamming_number) or (available_slots_in == 0):
+            if  (available_slots_out == 0): #locked_liq_in >= balance_in * magic_jamming_number) or
                 eventDf.at[index, 'weak jammed'] = True
             else:
                 eventDf.at[index, 'weak jammed'] = False
     return eventDf
 
 
-def updateStrongJamOp1(pair_schedule_df, channelsDf, inChannel, outChannel, numOfSlots):
+def updateStrongJamOp1(eventDf, channelsDf, numOfSlots):
     magic_jamming_number = 0.95
-    balance_in = channelsDf[channelsDf['chan_id'] == inChannel]['capacity'].iloc[0].astype(int) * (1 / 2)  # balance in channel
-    balance_out = channelsDf[channelsDf['chan_id'] == outChannel]['capacity'].iloc[0].astype(int) * (1 / 2)  # balance in channel
-    locked_liq_in = 0
-    locked_liq_out = 0
-    available_slots_in = numOfSlots
-    available_slots_out = numOfSlots
-    #print(tabulate(channelsDf.head(), headers='keys'))
-    for index, row in pair_schedule_df.iterrows():
-        if (row['eventType'] == 'add') and (row['outgoingEndorsed'] == False):
-            balance_in = balance_in - int(row['incomingAmount'])
-            locked_liq_in = locked_liq_in + int(row['incomingAmount'])
-            available_slots_in = available_slots_in - 1
-        elif row['eventType'] == 'resolve':
-            locked_liq_in = locked_liq_in - int(row['incomingAmount'])
-            available_slots_in = available_slots_in + 1
 
-        pair_schedule_df.at[index, 'balance in'] = balance_in
-        pair_schedule_df.at[index, 'locked liq in'] = locked_liq_in
+    for channel in channels_df['chan_id'].unique():
+        balance_in = channelsDf[channelsDf['chan_id'] == channel]['capacity'].iloc[0].astype(int) * (1 / 2)  # balance in channel
+        #balance_out = channelsDf[channelsDf['chan_id'] == outChannel]['capacity'].iloc[0].astype(int) * (1 / 2)  # balance in channel
+        locked_liq_in = 0
+        locked_liq_out = 0
+        available_slots_in = numOfSlots
+        available_slots_out = numOfSlots
+        #print(tabulate(channelsDf.head(), headers='keys'))
+        for index, row in eventDf[eventDf['shortChannelId_outgoing'] == channel].iterrows():
+            if (row['eventType'] == 'add'):  # and (row['outgoingEndorsed'] == False):
+                # balance_in = balance_in - int(row['incomingAmount'])
+                # locked_liq_in = locked_liq_in + int(row['outgoingAmount'])
+                available_slots_out = available_slots_out - 1
+            elif row['eventType'] == 'resolve':
+                # locked_liq_in = locked_liq_in - int(row['incomingAmount'])
+                available_slots_out = available_slots_out + 1
 
-        if (locked_liq_in >= balance_in * magic_jamming_number) or (available_slots_in == 0):
-            pair_schedule_df.at[index, 'strong jammed op1'] = True
-        else:
-            pair_schedule_df.at[index, 'strong jammed op1'] = False
+            #pair_schedule_df.at[index, 'balance in'] = balance_in
+            #pair_schedule_df.at[index, 'locked liq in'] = locked_liq_in
+
+            if (available_slots_out == 0): #locked_liq_in >= balance_in * magic_jamming_number) or
+                pair_schedule_df.at[index, 'strong jammed op1'] = True
+            else:
+                pair_schedule_df.at[index, 'strong jammed op1'] = False
     return pair_schedule_df
 
 
@@ -217,12 +220,12 @@ def updateStrongJamOp2(rep_by_channel_df, events_df):
     clean_df['strong jam op2'] = np.where(((clean_df['high rep neighbor'] == 'no') & (clean_df['weak jammed'] == True)),
                                           True, False)
     clean_df['strong jam'] = np.where(((clean_df['strong jammed op1']) | (clean_df['strong jam op2'])), True, False)
-    return clean_df.reset_index()
+    return clean_df.reset_index(drop = True)
 
 if __name__ == '__main__':
     #in_channel = '273778395381760'
     #out_channel = '267181325615104'
-    slots_in_channel = 1
+    slots_in_channel = 2
 
 
     forward_df = create_forwards_df('files/forwarding_history.json')
@@ -238,11 +241,10 @@ if __name__ == '__main__':
                     continue
                 else:
                     results_dfs.append(createJamScheduleForPair(in_channel, out_channel, forward_df)) #Two channels in a given direction
-                    print(f'for pair {in_channel} and {out_channel} we have {len(results_dfs)}')
 #                    print(tabulate(pair_schedule_df.head(30), headers='keys'))
         concat_df = pd.concat(results_dfs, ignore_index=True)
         ordered_df = concat_df.sort_values(by='timeOfEvent')
-        pair_schedule_df = ordered_df.reset_index()
+        pair_schedule_df = ordered_df.reset_index(drop = True)
 
 
 
@@ -255,13 +257,14 @@ if __name__ == '__main__':
 #    print(tabulate(forward_df.head(30), headers='keys'))
 
     with_weak_jam = updateWeakJam(pair_schedule_df,  slots_in_channel)
-    print('pair_schedule_df:')
-    print(tabulate(pair_schedule_df.head(100), headers='keys'))
+    #print('pair_schedule_df:')
+    #print(tabulate(pair_schedule_df.head(10), headers='keys'))
 
 #    print(tabulate(with_weak_jam.head(30), headers='keys'))
-    with_strong_jam_op1 = updateStrongJamOp1(pair_schedule_df, channels_df, in_channel, out_channel, slots_in_channel)
+    with_strong_jam_op1 = updateStrongJamOp1(pair_schedule_df, channels_df,  slots_in_channel)
 #    print(with_weak_jam['weak jammed'].head(10))
-#    print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
+    print('OP1 update:')
+    print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
 
     week_jam_by_neighbor_df = fill_reputation_by_channel(channels_df, reputation_df)
     #print(tabulate(week_jam_by_neighbor_df.head(30), headers='keys'))
