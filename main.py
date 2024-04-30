@@ -256,7 +256,7 @@ def calc_total_jam():
 
     # Output the results
     #print(f"True periods and their durations: {true_durations}")
-    print(f"Total Time of strong jam in nanoseconds: {total_true_time}")
+    print(f"Total time of strong jam in nanoseconds: {total_true_time}")
 
 
 def calc_fees():
@@ -280,6 +280,29 @@ def updateStrongJamOp2(rep_by_channel_df, events_df):
     clean_df['strong jam'] = np.where(((clean_df['strong jammed op1']) | (clean_df['strong jam op2'])), True, False)
     return clean_df.reset_index(drop = True)
 
+
+def unpack_htlcs(htlcs):
+    # Unpack 'htlcs' if not empty and is a list
+    if htlcs and isinstance(htlcs, list):
+        # List comprehensions to extract data from each htlc, including nested 'route'
+        status = [htlc.get('status') for htlc in htlcs]
+        #timestamps = [htlc.get('timestamp') for htlc in htlcs]
+        # Extract 'total_fees_msat' from the 'route' within each 'htlcs' if it exists
+        total_fees_msat = [htlc.get('route', {}).get('total_fees_msat') if htlc.get('route') else None for htlc in htlcs]
+
+        return pd.Series({
+            'status': status[0],
+            'total_fees_msat': int(total_fees_msat[0])
+        })
+
+
+def extract_data(payment):
+    # Extract data from both 'htlcs' and 'route'
+    data = {}
+    if 'htlcs' in payment:
+        data.update(unpack_htlcs(payment['htlcs']))
+    return pd.Series(data)
+
 if __name__ == '__main__':
     #in_channel = '273778395381760'
     #out_channel = '267181325615104'
@@ -289,6 +312,8 @@ if __name__ == '__main__':
     forward_df = create_forwards_df('files/forwarding_history.json')
     channels_df = create_channels_df('files/channels.json')
     reputation_df = create_reputation_df('files/reputation_thresholds.json')
+
+    paymentsDf = pd.read_json('files/payments.json')
 
    #find all pairs and go over them
     if True:
@@ -321,8 +346,8 @@ if __name__ == '__main__':
 #    print(tabulate(with_weak_jam.head(30), headers='keys'))
     with_strong_jam_op1 = updateStrongJamOp1(pair_schedule_df, channels_df,  slots_in_channel)
 #    print(with_weak_jam['weak jammed'].head(10))
-    print('OP1 update:')
-    print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
+    #print('OP1 update:')
+    #print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
 
     week_jam_by_neighbor_df = fill_reputation_by_channel(channels_df, reputation_df)
     #print('weak jam by n')
@@ -331,20 +356,30 @@ if __name__ == '__main__':
     with_op2 = updateStrongJamOp2(week_jam_by_neighbor_df, with_strong_jam_op1)
 
     changes = times_of_change(with_op2)
-    print('changes:')
-    print(tabulate(changes.head(30), headers='keys'))
+    #print('changes:')
+    #print(tabulate(changes.head(30), headers='keys'))
+
+    paymentsDetaildf = paymentsDf['payments'].apply(extract_data)
 
     #print(tabulate(with_op2, headers='keys'))
-    print('times of strong jam')
-    print(tabulate(with_op2[with_op2['strong jam']==True].head(30), headers='keys'))
+    #print('times of strong jam')
+    #print(tabulate(with_op2[with_op2['strong jam']==True].head(30), headers='keys'))
     #print(tabulate(with_op2[with_op2["weak jammed"]==True].head(30), headers='keys'))
-    print(f"num of events {len(with_op2)}")
-    print(f"weak jam {len(with_op2[with_op2['weak jammed']==True])}")
-    print(f"strong jam {len(with_op2[with_op2['strong jam']==True])}")
+    #print(f"num of events {len(with_op2)}")
+    #print(f"weak jam {len(with_op2[with_op2['weak jammed']==True])}")
+    #print(f"strong jam {len(with_op2[with_op2['strong jam']==True])}")
     print(f"HTLCs sent {len(pair_schedule_df[pair_schedule_df['eventType'] == 'add'])}")
-    print(f'Fees: {calc_fees()}')
+    #print(f'Fees: {calc_fees()}')
 
     calc_total_jam()
+
+    success = paymentsDetaildf[paymentsDetaildf['status'] == 'SUCCEEDED']['total_fees_msat'].sum()
+    upfront = paymentsDetaildf['total_fees_msat'].sum() * 0.01
+    print(f'Success: {success}')
+    print(f'Upfront: {upfront}')
+
+
+
 
     #print(f'this is {with_op2[with_op2["time"] == "1712783765395927992"]["high rep pair"]}')
 
