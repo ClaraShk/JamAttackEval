@@ -1,6 +1,8 @@
 import pandas as pd
 from tabulate import tabulate
 import numpy as np
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 #read and parse forwards json
@@ -65,9 +67,14 @@ def fill_reputation_by_channel(channel_df, reputation_df, reputation_cutoff = 0.
         'event time': reputation_df['forwardTsNs'].values
     })
 
+    #print(f'columns are {reputation_df.columns}')
+    #print(tabulate(reputation_df.head(30), headers="keys"))
+
+
     # For every unique 'shortChannelId_incoming', add a column with NaN or another placeholder
-    for channel in reputation_df['shortChannelId_incoming'].unique():  # change to pairs of channels
-        new_df_with_events[channel] = np.nan
+    for channelIn in reputation_df['shortChannelId_incoming'].unique(): # change to pairs of channels
+        for channelOut in reputation_df['outgoingChannel'].unique():
+            new_df_with_events[channelIn+','+channelOut] = np.nan
 
     for time in new_df_with_events['event time']:
         # Find rows in strong_reputationDf_short where 'forwardTsNs' matches 'time' and 'approx rep' is greater than 0
@@ -82,22 +89,31 @@ def fill_reputation_by_channel(channel_df, reputation_df, reputation_cutoff = 0.
         if not filtered_df_low.empty:
             # Assuming there's only one such match per 'time', get the 'shortChannelId_incoming' for that match
             incoming_channel = filtered_df_low['shortChannelId_incoming'].iloc[0]
+            outgoing_channel = filtered_df_low['outgoingChannel'].iloc[0]
+            #print(f'incoming channel {incoming_channel}, out {outgoing_channel}')
 
             # Find the index(es) in new_df_with_events where 'event time' matches 'time'
             # Then use .loc to safely assign 'good' to 'incoming_channel' column for those index(es)
             indices = new_df_with_events[new_df_with_events['event time'] == time].index
-            new_df_with_events.loc[indices, incoming_channel] = 'low'
+            new_df_with_events.loc[indices, incoming_channel+','+outgoing_channel] = 'low'
         if not filtered_df_good.empty:
             # Assuming there's only one such match per 'time', get the 'shortChannelId_incoming' for that match
             incoming_channel = filtered_df_good['shortChannelId_incoming'].iloc[0]
+            outgoing_channel = filtered_df_good['outgoingChannel'].iloc[0]
 
             # Find the index(es) in new_df_with_events where 'event time' matches 'time'
             # Then use .loc to safely assign 'good' to 'incoming_channel' column for those index(es)
             indices = new_df_with_events[new_df_with_events['event time'] == time].index
-            new_df_with_events.loc[indices, incoming_channel] = 'good'
+            new_df_with_events.loc[indices, incoming_channel+','+outgoing_channel] = 'good'
+
+    if False:
+        new_row = pd.DataFrame({column: ['low'] if column != 'event time' else [None] for column in new_df_with_events.columns})
+        new_row['event time'] = '0'
+
+        new_df_with_events = pd.concat([new_row, new_df_with_events], ignore_index=True)
 
     new_df_with_events.ffill(inplace=True)
-    new_df_with_events['high rep neighbor'] = new_df_with_events.apply(
+    new_df_with_events['high rep pair'] = new_df_with_events.apply(
         lambda row: 'no' if not 'good' in row.values else 'yes', axis=1)
     return new_df_with_events
 
@@ -138,8 +154,9 @@ def createJamScheduleForPair(inChannel, OutChannel, forwardsDf):
     return ordered_df
 
 
-#In a df of events, update the column 'weak jam'
-def updateWeakJam(eventDf, numOfSlots): #re-write so it follows the balance of each channel to get correct result
+# In a df of events, update the column 'weak jam'
+# Currently only checking if slots and out is jammed
+def updateWeakJam(eventDf, numOfSlots):
 
     magic_jamming_number = 0.95
 
@@ -177,6 +194,7 @@ def updateWeakJam(eventDf, numOfSlots): #re-write so it follows the balance of e
     return eventDf
 
 
+# Currently only checking if slots and out is jammed
 def updateStrongJamOp1(eventDf, channelsDf, numOfSlots):
     magic_jamming_number = 0.95
 
@@ -189,35 +207,75 @@ def updateStrongJamOp1(eventDf, channelsDf, numOfSlots):
         available_slots_out = numOfSlots
         #print(tabulate(channelsDf.head(), headers='keys'))
         for index, row in eventDf[eventDf['shortChannelId_outgoing'] == channel].iterrows():
+
             if (row['eventType'] == 'add'):  # and (row['outgoingEndorsed'] == False):
                 # balance_in = balance_in - int(row['incomingAmount'])
                 # locked_liq_in = locked_liq_in + int(row['outgoingAmount'])
-                available_slots_out = available_slots_out - 1
+                numOfSlots = numOfSlots - 1
             elif row['eventType'] == 'resolve':
                 # locked_liq_in = locked_liq_in - int(row['incomingAmount'])
-                available_slots_out = available_slots_out + 1
-
+                numOfSlots = numOfSlots + 1
             #pair_schedule_df.at[index, 'balance in'] = balance_in
             #pair_schedule_df.at[index, 'locked liq in'] = locked_liq_in
+            pair_schedule_df.at[index, 'available slots'] = numOfSlots
 
-            if (available_slots_out == 0): #locked_liq_in >= balance_in * magic_jamming_number) or
+            if (numOfSlots == 0): #locked_liq_in >= balance_in * magic_jamming_number) or
                 pair_schedule_df.at[index, 'strong jammed op1'] = True
             else:
                 pair_schedule_df.at[index, 'strong jammed op1'] = False
     return pair_schedule_df
 
+def times_of_change(jamDf):
+    changes = jamDf['strong jam'] != jamDf['strong jam'].shift(1)
+    indices_of_changes = changes[changes].index
+    indices_to_keep = sorted(
+        set(indices_of_changes.union(indices_of_changes - 1).intersection(range(len(jamDf)))))
+    change_table = jamDf.loc[indices_to_keep]
+    return change_table
+
+def calc_total_jam():
+    # Detect changes in 'strong_jam'
+    with_op2['change'] = with_op2['strong jam'] != with_op2['strong jam'].shift()
+
+    # Identify start and end indices of True periods
+    starts = with_op2[(with_op2['strong jam'] == True) & (with_op2['change'] == True)].index
+    ends = with_op2[(with_op2['strong jam'] == True) & (with_op2['change'].shift(-1) == True)].index
+
+    # Prepare a list to hold durations
+    true_durations = []
+
+    # Iterate over starts and ends to calculate durations
+    for start, end in zip(starts, ends):
+        start_time = with_op2.loc[start, 'time']
+        end_time = with_op2.loc[end + 1, 'time'] if end + 1 < len(with_op2) else with_op2.loc[end, 'time']
+        duration = int(end_time) - int(start_time)
+        true_durations.append(duration)
+
+    # Compute the total time
+    total_true_time = sum(true_durations)
+
+    # Output the results
+    #print(f"True periods and their durations: {true_durations}")
+    print(f"Total Time of strong jam in nanoseconds: {total_true_time}")
+
+
+def calc_fees():
+    forward_df['fee'] = forward_df['incomingAmount'].astype(int) - forward_df['outgoingAmount'].astype(int)
+    return forward_df['fee'].sum()
+
 
 def updateStrongJamOp2(rep_by_channel_df, events_df):
-    df1 = rep_by_channel_df[['event time', 'high rep neighbor']].copy()
+    df1 = rep_by_channel_df[['event time', 'high rep pair']].copy()
     df2 = events_df[['timeOfEvent', 'weak jammed', 'strong jammed op1']].copy()
     combined_df = pd.concat([df1, df2], ignore_index=True)
     combined_df['time'] = np.where(combined_df['event time'].isna(), combined_df['timeOfEvent'],
                                    combined_df['event time'])
-    combined_df.sort_values(by='time')
-    clean_df = combined_df[['time', 'high rep neighbor', 'weak jammed', 'strong jammed op1']].sort_values(
+    combined_df = combined_df.sort_values(by='time')
+
+    clean_df = combined_df[['time', 'high rep pair', 'weak jammed', 'strong jammed op1']].sort_values(
         by='time').copy()
     clean_df.ffill(inplace=True)
-    clean_df['strong jam op2'] = np.where(((clean_df['high rep neighbor'] == 'no') & (clean_df['weak jammed'] == True)),
+    clean_df['strong jam op2'] = np.where(((clean_df['high rep pair'] == 'no') & (clean_df['weak jammed'] == True)),
                                           True, False)
     clean_df['strong jam'] = np.where(((clean_df['strong jammed op1']) | (clean_df['strong jam op2'])), True, False)
     return clean_df.reset_index(drop = True)
@@ -267,15 +325,28 @@ if __name__ == '__main__':
     print(tabulate(with_strong_jam_op1.head(30), headers='keys'))
 
     week_jam_by_neighbor_df = fill_reputation_by_channel(channels_df, reputation_df)
+    #print('weak jam by n')
     #print(tabulate(week_jam_by_neighbor_df.head(30), headers='keys'))
 
     with_op2 = updateStrongJamOp2(week_jam_by_neighbor_df, with_strong_jam_op1)
 
-    print(tabulate(with_op2.head(30), headers='keys'))
+    changes = times_of_change(with_op2)
+    print('changes:')
+    print(tabulate(changes.head(30), headers='keys'))
+
+    #print(tabulate(with_op2, headers='keys'))
+    print('times of strong jam')
+    print(tabulate(with_op2[with_op2['strong jam']==True].head(30), headers='keys'))
     #print(tabulate(with_op2[with_op2["weak jammed"]==True].head(30), headers='keys'))
     print(f"num of events {len(with_op2)}")
     print(f"weak jam {len(with_op2[with_op2['weak jammed']==True])}")
     print(f"strong jam {len(with_op2[with_op2['strong jam']==True])}")
+    print(f"HTLCs sent {len(pair_schedule_df[pair_schedule_df['eventType'] == 'add'])}")
+    print(f'Fees: {calc_fees()}')
+
+    calc_total_jam()
+
+    #print(f'this is {with_op2[with_op2["time"] == "1712783765395927992"]["high rep pair"]}')
 
 
 
