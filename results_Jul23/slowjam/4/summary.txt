@@ -1,0 +1,19 @@
+Running analysis for period: 1.721329464e+18 -> 1721330995626677000
+Running attack analysis for target node: 22
+
+Attacker sent: 3274 payments paying 1384652.05 msat fees
+- Success fees: 1296305 msat
+- Unconditional fees: 88347.05 msat
+
+Target revenue without attack: 2859.46 msat (standard deviation: 5615.075401423695
+Target revenue under attack: 1365856.25 msat
+- Success Fees: 1308725 msat
+- Unconditional fees: 57131.25000000001 msat
+
+Breakdown of target's revenue under attack:
+- Attacker paid 99.08%: 1353242.05 msat
+- Honest traffic paid 0.92%: 12614.199999999953 msat
+
+Result CSV:
+attacker_success_msat,attacker_unconditional_msat,target_success_msat,target_unconditional_msat,attacker_to_target_msat
+1296305,88347.05,1308725,57131.25000000001,1353242.05
